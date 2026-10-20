@@ -54,7 +54,8 @@ Split into units the browser can still join, then stagger the units exactly like
 
 - harakat (vowel marks) stay in the unit of their letter;
 - lam + alef (`لا` `لأ` `لإ` `لآ`) is one unit — it is a ligature;
-- a run of digits or Latin is one unit, or the RTL line reverses it;
+- `الله` is one unit — many Arabic fonts (Cairo, Tajawal, Alexandria) draw it as a ligature that disappears when it is split;
+- a run of digits or Latin is one unit, or the RTL line reverses it — a multi-word Latin phrase (`Hyper Frames`) stays one unit too;
 - each side of a unit that connects to its neighbour gets a zero-width joiner (`\u200D`), so the unit is drawn in its connected form.
 
 ```js
@@ -63,6 +64,8 @@ const RIGHT_JOINING =
   /[\u0622-\u0625\u0627\u0629\u062F-\u0632\u0648\u0671-\u0673\u0675-\u0677\u0688-\u0699\u06C0\u06C3-\u06CB\u06CD\u06CF\u06D2\u06D3\u06D5]/;
 const LETTER = /[\u0620-\u064A\u066E-\u06D3\u06D5\u06FA-\u06FC\u06FF]/;
 const LTR_RUN = /^[0-9\u0660-\u0669\u06F0-\u06F9A-Za-z\u066B\u066C.,:%]+$/;
+const LATIN = /^[A-Za-z]/;
+const ALLAH = ["\u0627", "\u0644", "\u0644", "\u0647"];
 const MARK = /[\u064B-\u065F\u0670\u06D6-\u06ED]/;
 const MARKS = /[\u064B-\u065F\u0670\u06D6-\u06ED\u200D]/g;
 const first = (u) => u.replace(MARKS, "")[0] ?? "";
@@ -81,8 +84,16 @@ function splitArabicLetters(text) {
   for (let i = 0; i < g.length; i++) {
     if (LTR_RUN.test(g[i])) {
       let run = g[i];
-      while (g[i + 1] && LTR_RUN.test(g[i + 1])) run += g[++i];
+      const latinSpace = (k) =>
+        g[k] === " " && LATIN.test(g[k - 1] ?? "") && LATIN.test(g[k + 1] ?? "");
+      while (g[i + 1] && (LTR_RUN.test(g[i + 1]) || latinSpace(i + 1))) run += g[++i];
       units.push(run);
+    } else if (
+      ALLAH.every((c, k) => first(g[i + k] ?? "") === c) &&
+      !LETTER.test(first(g[i + 4] ?? ""))
+    ) {
+      units.push(g.slice(i, i + 4).join(""));
+      i += 3;
     } else if (
       first(g[i]) === "\u0644" &&
       /[\u0622\u0623\u0625\u0627]/.test(first(g[i + 1] ?? ""))
@@ -100,9 +111,14 @@ function splitArabicLetters(text) {
 }
 
 const line = document.querySelector("#title"); // dir="rtl"
-line.innerHTML = splitArabicLetters(line.dataset.text)
-  .map((u) => `<span class="char">${u === " " ? "&nbsp;" : u}</span>`)
-  .join("");
+line.replaceChildren(
+  ...splitArabicLetters(line.dataset.text).map((u) => {
+    const span = document.createElement("span");
+    span.className = "char";
+    span.textContent = u === " " ? "\u00A0" : u; // textContent: data-driven text may contain < or &
+    return span;
+  }),
+);
 ```
 
 ```css
@@ -111,11 +127,11 @@ line.innerHTML = splitArabicLetters(line.dataset.text)
 }
 ```
 
-In the HyperFrames render (Chrome) the joined units look exactly like the unsplit word.
+In the HyperFrames render (Chrome) every letter keeps its joined form. A split line can come out a few pixels wider than the unsplit text, because kerning and mark positioning do not cross `inline-block` boundaries.
 
 ## Fonts
 
-None of the pre-bundled families covers Arabic (see `hyperframes-creative/references/typography.md`), so embed one with `@font-face` — for example Noto Sans Arabic, IBM Plex Sans Arabic, Cairo or Tajawal. Otherwise the render picks whatever Arabic font the machine has, and cloud renders have no system fonts to capture.
+None of the pre-bundled families covers Arabic script (see `hyperframes-creative/references/typography.md`), so embed one with `@font-face` — for example Noto Sans Arabic, IBM Plex Sans Arabic, Cairo or Tajawal. Otherwise the render picks whatever Arabic font the machine has, and cloud renders have no system fonts to capture. Hebrew is different: bundled Open Sans includes a Hebrew subset.
 
 ## Critical Constraints
 
